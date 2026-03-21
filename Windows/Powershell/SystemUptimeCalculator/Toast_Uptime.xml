@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><toast duration="long"><visual><binding template="ToastGeneric"><text>Letzter Boot am __lastboot__</text><text>__lastuptimetext__</text><text>Die Gesamtlaufzeit des Rechners beträgt __totaluptime__</text><image src="__path__" placement="appLogoOverride" hint-crop="circle" /></binding></visual></toast>
