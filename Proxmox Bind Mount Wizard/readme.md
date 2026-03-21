@@ -1,6 +1,8 @@
 # Proxmox Bind Mount Wizard
 
 A comprehensive bash utility for managing CIFS (SMB) share bind mounts in Proxmox LXC containers. This wizard automates the setup, configuration, and management of network share mounts with full UID/GID mapping support.
+Is it overkill? Yes, most likely! Does it do exactly what I need? Of course!
+I'm one of those people, which do not want to repeat the same things over and over again when creating new LXCs, doing some testing. Thus, this script was created :) 
 
 ## Features
 
