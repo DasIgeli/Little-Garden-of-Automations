@@ -37,7 +37,7 @@ Both packages can be installed automatically by the script if not present.
 
 1. **Download the script:**
    ```bash
-   curl -O https://github.com/DasIgeli/Little-Proxmox-Scripts/blob/main/Proxmox%20Bind%20Mount%20Wizard/ProxmoxBindMountWizard.sh
+   curl -O https://raw.githubusercontent.com/DasIgeli/Little-Garden-of-Automations/refs/heads/main/Proxmox/Proxmox%20Bind%20Mount%20Wizard/ProxmoxBindMountWizard.sh
    ```
 
 2. **Make it executable:**
@@ -49,6 +49,11 @@ Both packages can be installed automatically by the script if not present.
    ```bash
    sudo ./ProxmoxBindMountWizard.sh
    ```
+
+## Alternatively run the script straight from the repo in help mode.
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/DasIgeli/Little-Garden-of-Automations/refs/heads/main/Proxmox/Proxmox%20Bind%20Mount%20Wizard/ProxmoxBindMountWizard.sh)" -- --help
+```
 
 ## Usage
 
