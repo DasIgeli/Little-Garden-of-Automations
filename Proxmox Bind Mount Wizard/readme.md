@@ -36,7 +36,7 @@ Both packages can be installed automatically by the script if not present.
 
 1. **Download the script:**
    ```bash
-   curl -O https://github.com/yourusername/proxmox-bind-mount-wizard/raw/main/Linux/Bash/ProxmoxBindMountWizard.sh
+   curl -O https://github.com/Ig3l/Little-Proxmox-Scripts/blob/main/Proxmox%20Bind%20Mount%20Wizard/ProxmoxBindMountWizard.sh
    ```
 
 2. **Make it executable:**
