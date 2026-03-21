@@ -50,11 +50,6 @@ Both packages can be installed automatically by the script if not present.
    sudo ./ProxmoxBindMountWizard.sh
    ```
 
-## Alternatively run it straight from the shell
-   ```bash
-   bash -c "$(curl -fsSL https://github.com/DasIgeli/Little-Proxmox-Scripts/blob/main/Proxmox%20Bind%20Mount%20Wizard/ProxmoxBindMountWizard.sh --help)"
-   ```
-
 ## Usage
 
 ### Basic Setup (Interactive Mode)
