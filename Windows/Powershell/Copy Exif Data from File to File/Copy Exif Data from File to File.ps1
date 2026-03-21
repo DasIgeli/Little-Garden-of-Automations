@@ -9,6 +9,11 @@ This script searches for video files in a specified directory, excluding those i
 and copies the EXIF data from the original video files to their corresponding encoded video files.
 The script uses ExifTool to perform this operation.
 
+.Notes
+Requires ExifTool to be installed and accessible via the specified path.
+https://exiftool.org/
+
+
 .PARAMETER FolderPath
 The path to the main folder containing the video files.
 
