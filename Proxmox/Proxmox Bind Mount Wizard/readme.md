@@ -377,9 +377,8 @@ sudo ./ProxmoxBindMountWizard.sh --diff
 
 For issues, questions, or suggestions:
 1. Check the Troubleshooting section above
-2. Review script output with `--no-color` flag for clarity
-3. Examine `/mnt/lxc_shares/.wizard-manifest.json` for operation history
-4. Check Proxmox logs: `journalctl -u pvedaemon` or container logs: `pct logs <lxc_id>`
+2. Examine `/mnt/lxc_shares/.wizard-manifest.json` for operation history
+3. Check Proxmox logs: `journalctl -u pvedaemon` or container logs: `pct logs <lxc_id>`
 
 ## Contributing
 
