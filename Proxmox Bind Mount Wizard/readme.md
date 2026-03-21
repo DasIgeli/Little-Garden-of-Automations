@@ -10,7 +10,6 @@ A comprehensive bash utility for managing CIFS (SMB) share bind mounts in Proxmo
 - **Manifest System**: Complete operation tracking and management via JSON manifest file
 - **Rollback Support**: Safely remove previously created mounts with full cleanup
 - **Dry-Run Preview**: Preview changes before applying them with the diff mode
-- **Color-Coded Output**: Clear visual feedback with success, error, warning, and info indicators
 - **Multiple Modes**: Setup, rollback, list, and diff preview modes
 
 ## Requirements
