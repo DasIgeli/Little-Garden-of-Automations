@@ -1118,7 +1118,8 @@ mount "$MOUNT_POINT" || true
 print_info "Updating LXC config"
 
 MP_INDEX=0
-while grep -q "mp${MP_INDEX}:" "$LXC_CONF"; do
+# Only match lines that start with mpX: (not commented lines)
+while grep -q "^mp${MP_INDEX}:" "$LXC_CONF"; do
     ((MP_INDEX++))
 done
 
