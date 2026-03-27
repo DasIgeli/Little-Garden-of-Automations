@@ -40,7 +40,6 @@ print_info() {
 # -------- FUNCTIONS --------
 
 print_header() {
-    # Bold and bright cyan
     local BOLD="\e[1m"
     local CYAN="\e[96m"
     local RESET="\e[0m"
@@ -106,7 +105,7 @@ check_jq() {
 
 init_manifest() {
     local manifest_file="/mnt/lxc_shares/.wizard-manifest.json"
-    
+
     if [ ! -f "$manifest_file" ]; then
         mkdir -p /mnt/lxc_shares
         cat > "$manifest_file" <<EOF
@@ -137,30 +136,31 @@ save_manifest() {
 add_operation() {
     local manifest_file="/mnt/lxc_shares/.wizard-manifest.json"
     local operation_json="$1"
-    
-    local manifest=$(load_manifest)
+
+    local manifest
+    manifest=$(load_manifest)
     manifest=$(echo "$manifest" | jq ".operations += [$operation_json]")
     save_manifest "$manifest"
 }
 
 remove_operations_from_manifest() {
     local manifest_file="/mnt/lxc_shares/.wizard-manifest.json"
-    
+
     if [ ! -f "$manifest_file" ]; then
         return 1
     fi
-    
+
     if [ $# -eq 0 ]; then
-        return 0  # Nothing to remove
+        return 0
     fi
-    
-    local manifest=$(load_manifest)
-    
-    # Remove each operation matching the provided mount names
+
+    local manifest
+    manifest=$(load_manifest)
+
     for mount_name in "$@"; do
         manifest=$(echo "$manifest" | jq ".operations |= map(select(.mount_name != \"$mount_name\"))")
     done
-    
+
     save_manifest "$manifest"
 }
 
@@ -183,7 +183,7 @@ build_operation_json() {
     local fstab_comment="${16}"
     local fstab_entry="${17}"
     local lxc_conf_entry="${18}"
-    
+
     jq -n \
         --arg timestamp "$timestamp" \
         --arg lxc_id "$lxc_id" \
@@ -239,14 +239,14 @@ parse_credential_file() {
     if [ ! -f "$cred_file" ]; then
         return 1
     fi
-    
+
     local username=""
     local domain=""
-    
+
     username=$(grep "^username=" "$cred_file" 2>/dev/null | cut -d= -f2- | tr -d '\r')
     domain=$(grep "^domain=" "$cred_file" 2>/dev/null | cut -d= -f2- | tr -d '\r')
     domain=${domain:-"(none)"}
-    
+
     echo "$username|$domain"
 }
 
@@ -254,244 +254,233 @@ parse_credential_file() {
 
 list_mounts() {
     local manifest_file="/mnt/lxc_shares/.wizard-manifest.json"
-    
+
     if [ ! -f "$manifest_file" ]; then
         print_warn "No mount operations found"
         return 0
     fi
-    
-    local op_count=$(jq '.operations | length' "$manifest_file" 2>/dev/null || echo 0)
-    
+
+    local op_count
+    op_count=$(jq '.operations | length' "$manifest_file" 2>/dev/null || echo 0)
+
     if [ "$op_count" -eq 0 ]; then
         print_info "No configured mounts"
         return 0
     fi
-    
+
     print_info "Configured mounts:"
     echo ""
-    echo "Index | LXC | Mount Name          | Share Path                    | Status"
-    echo "------|-----|---------------------|-----------| ---------"
-    
+    echo "Index   | LXC       | Mount Name          | Share Path                    | Status"
+    echo "--------|-----------|---------------------|-------------------------------|--------"
+
     local i=1
-    jq -r '.operations[] | 
-        "\($ENV.i) | \(.lxc_id) | \(.mount_name) | \(.share_ip)/\(.share_path) | \(.status)"' \
-        --arg i "" "$manifest_file" 2>/dev/null | while read -r line; do
+    while IFS= read -r line; do
         echo "[$i] $line"
-        ((i++))
-    done
-    
+        (( i++ )) || true
+    done < <(jq -r '.operations[] |
+        "\(.lxc_id) | \(.mount_name) | \(.share_ip)/\(.share_path) | \(.status)"' \
+        "$manifest_file" 2>/dev/null)
+
     echo ""
 }
 
 rollback_mounts() {
     local manifest_file="/mnt/lxc_shares/.wizard-manifest.json"
-    
+
     if [ ! -f "$manifest_file" ]; then
         print_error "No mount operations found to rollback"
         return 1
     fi
-    
-    local op_count=$(jq '.operations | length' "$manifest_file" 2>/dev/null || echo 0)
-    
+
+    local op_count
+    op_count=$(jq '.operations | length' "$manifest_file" 2>/dev/null || echo 0)
+
     if [ "$op_count" -eq 0 ]; then
         print_warn "No configured mounts to rollback"
         return 0
     fi
-    
+
     print_info "Available mounts for rollback:"
     echo ""
-    
-    # Array to store mount info for selection
-    declare -a MOUNT_INDICES
-    declare -a MOUNT_NAMES
-    declare -a MOUNT_POINTS
-    declare -a MOUNT_LXC_IDS
-    declare -a MOUNT_FSTAB_ENTRIES
-    declare -a MOUNT_LXC_CONF_ENTRIES
-    
-    # Array to collect mount names for manifest cleanup
+
+    declare -a MOUNT_NAMES=()
+    declare -a MOUNT_POINTS=()
+    declare -a MOUNT_LXC_IDS=()
+    declare -a MOUNT_FSTAB_ENTRIES=()
+    declare -a MOUNT_LXC_CONF_ENTRIES=()
     declare -a MOUNTS_TO_REMOVE=()
-    
+
     local idx=1
     while IFS= read -r mount_info; do
-        local mount_name=$(echo "$mount_info" | jq -r '.mount_name')
-        local lxc_id=$(echo "$mount_info" | jq -r '.lxc_id')
-        local mount_point=$(echo "$mount_info" | jq -r '.mount_point')
-        local fstab_entry=$(echo "$mount_info" | jq -r '.fstab_entry')
-        local lxc_conf_entry=$(echo "$mount_info" | jq -r '.lxc_conf_entry')
-        local status=$(echo "$mount_info" | jq -r '.status')
-        
-        MOUNT_INDICES+=("$idx")
+        local mount_name lxc_id mount_point fstab_entry lxc_conf_entry status
+        mount_name=$(echo "$mount_info" | jq -r '.mount_name')
+        lxc_id=$(echo "$mount_info" | jq -r '.lxc_id')
+        mount_point=$(echo "$mount_info" | jq -r '.mount_point')
+        fstab_entry=$(echo "$mount_info" | jq -r '.fstab_entry')
+        lxc_conf_entry=$(echo "$mount_info" | jq -r '.lxc_conf_entry')
+        status=$(echo "$mount_info" | jq -r '.status')
+
         MOUNT_NAMES+=("$mount_name")
         MOUNT_POINTS+=("$mount_point")
         MOUNT_LXC_IDS+=("$lxc_id")
         MOUNT_FSTAB_ENTRIES+=("$fstab_entry")
         MOUNT_LXC_CONF_ENTRIES+=("$lxc_conf_entry")
-        
+
         echo "[$idx] $mount_name (LXC $lxc_id) - $mount_point [$status]"
-        ((idx++))
+        (( idx++ )) || true
     done < <(jq -c '.operations[]' "$manifest_file" 2>/dev/null)
-    
+
     echo ""
     read -rp "Select mount(s) to rollback (comma/space-separated, e.g. 1,3): " selection
-    
+
     if [ -z "$selection" ]; then
         print_warn "No selection made"
         return 0
     fi
-    
-    # Parse selection
+
     local selected_indices=()
     for sel in ${selection//,/ }; do
-        sel=${sel/ /}  # Remove whitespace
+        sel="${sel// /}"
         if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -lt "$idx" ]; then
             selected_indices+=("$sel")
         fi
     done
-    
+
     if [ ${#selected_indices[@]} -eq 0 ]; then
         print_error "Invalid selection"
         return 1
     fi
-    
-    # Perform rollback for each selected mount
+
     for sel_idx in "${selected_indices[@]}"; do
-        local array_idx=$((sel_idx - 1))
+        local array_idx=$(( sel_idx - 1 ))
         local mount_name="${MOUNT_NAMES[$array_idx]}"
         local mount_point="${MOUNT_POINTS[$array_idx]}"
         local lxc_id="${MOUNT_LXC_IDS[$array_idx]}"
         local fstab_entry="${MOUNT_FSTAB_ENTRIES[$array_idx]}"
         local lxc_conf_entry="${MOUNT_LXC_CONF_ENTRIES[$array_idx]}"
-        
+
         print_info "Rolling back: $mount_name"
-        
-        # Remove from fstab (also removes comment line)
+
+        # Remove from fstab
         if grep -q "$mount_point" /etc/fstab 2>/dev/null; then
-            # Remove the mount point line and the preceding comment
             sed -i "\|${fstab_entry}|d" /etc/fstab 2>/dev/null || true
-            sed -i "*${mount_point}*d" /etc/fstab 2>/dev/null || true
+            sed -i "\|${mount_point}|d" /etc/fstab 2>/dev/null || true
             print_success "Removed from /etc/fstab"
         fi
-        
+
         # Remove from LXC config
         local lxc_conf="/etc/pve/lxc/${lxc_id}.conf"
         if [ -f "$lxc_conf" ] && grep -q "$mount_point" "$lxc_conf" 2>/dev/null; then
             sed -i "\|${lxc_conf_entry}|d" "$lxc_conf" 2>/dev/null || true
-            # Also remove the preceding comment
-            sed -i "*${mount_point}*d" "$lxc_conf" 2>/dev/null || true
+            sed -i "\|${mount_point}|d" "$lxc_conf" 2>/dev/null || true
             print_success "Removed from LXC config ($lxc_id.conf)"
         fi
-        
+
         # Unmount the share
         if mountpoint -q "$mount_point" 2>/dev/null; then
             umount "$mount_point" 2>/dev/null || true
             print_success "Unmounted $mount_point"
         fi
-        
+
         # Optionally remove the mount point directory
         if [ -d "$mount_point" ]; then
             if confirm "Remove mount point directory ($mount_point)?"; then
                 rmdir "$mount_point" 2>/dev/null || print_warn "Could not remove directory (may contain files)"
             fi
         fi
-        
-        # Collect mount name for manifest removal
+
         MOUNTS_TO_REMOVE+=("$mount_name")
     done
-    
-    # Remove operations from manifest
+
     if [ ${#MOUNTS_TO_REMOVE[@]} -gt 0 ]; then
         print_info "Updating manifest..."
         remove_operations_from_manifest "${MOUNTS_TO_REMOVE[@]}"
         print_success "Removed entries from manifest"
     fi
-    
+
     echo ""
     print_success "Rollback complete"
 }
 
 diff_rollback() {
     local manifest_file="/mnt/lxc_shares/.wizard-manifest.json"
-    
+
     if [ ! -f "$manifest_file" ]; then
         print_error "No mount operations found"
         return 1
     fi
-    
-    local op_count=$(jq '.operations | length' "$manifest_file" 2>/dev/null || echo 0)
-    
+
+    local op_count
+    op_count=$(jq '.operations | length' "$manifest_file" 2>/dev/null || echo 0)
+
     if [ "$op_count" -eq 0 ]; then
         print_warn "No configured mounts"
         return 0
     fi
-    
+
     print_info "Available mounts for diff preview:"
     echo ""
-    echo "Index | LXC | Mount Name          | Mount Point"
-    echo "------|-----|---------------------|-------------------"
-    
-    # Array to store mount info for selection
-    declare -a MOUNT_INDICES
-    declare -a MOUNT_NAMES
-    declare -a MOUNT_POINTS
-    declare -a MOUNT_LXC_IDS
-    declare -a MOUNT_FSTAB_ENTRIES
-    declare -a MOUNT_LXC_CONF_ENTRIES
-    
+    echo "Index   | LXC       | Mount Name          | Share Path                    "
+    echo "--------|-----------|---------------------|-------------------------------"
+
+    declare -a MOUNT_NAMES=()
+    declare -a MOUNT_POINTS=()
+    declare -a MOUNT_LXC_IDS=()
+    declare -a MOUNT_FSTAB_ENTRIES=()
+    declare -a MOUNT_LXC_CONF_ENTRIES=()
+
     local idx=1
     while IFS= read -r mount_info; do
-        local mount_name=$(echo "$mount_info" | jq -r '.mount_name')
-        local lxc_id=$(echo "$mount_info" | jq -r '.lxc_id')
-        local mount_point=$(echo "$mount_info" | jq -r '.mount_point')
-        local fstab_entry=$(echo "$mount_info" | jq -r '.fstab_entry')
-        local lxc_conf_entry=$(echo "$mount_info" | jq -r '.lxc_conf_entry')
-        
-        MOUNT_INDICES+=("$idx")
+        local mount_name lxc_id mount_point fstab_entry lxc_conf_entry
+        mount_name=$(echo "$mount_info" | jq -r '.mount_name')
+        lxc_id=$(echo "$mount_info" | jq -r '.lxc_id')
+        mount_point=$(echo "$mount_info" | jq -r '.mount_point')
+        fstab_entry=$(echo "$mount_info" | jq -r '.fstab_entry')
+        lxc_conf_entry=$(echo "$mount_info" | jq -r '.lxc_conf_entry')
+
         MOUNT_NAMES+=("$mount_name")
         MOUNT_POINTS+=("$mount_point")
         MOUNT_LXC_IDS+=("$lxc_id")
         MOUNT_FSTAB_ENTRIES+=("$fstab_entry")
         MOUNT_LXC_CONF_ENTRIES+=("$lxc_conf_entry")
-        
+
         echo "[$idx] $lxc_id | $mount_name | $mount_point"
-        ((idx++))
+        (( idx++ )) || true
     done < <(jq -c '.operations[]' "$manifest_file" 2>/dev/null)
-    
+
     echo ""
     read -rp "Select mount(s) to preview (comma/space-separated): " selection
-    
+
     if [ -z "$selection" ]; then
         print_warn "No selection made"
         return 0
     fi
-    
-    # Parse selection
+
     local selected_indices=()
     for sel in ${selection//,/ }; do
-        sel=${sel/ /}  # Remove whitespace
+        sel="${sel// /}"
         if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -lt "$idx" ]; then
             selected_indices+=("$sel")
         fi
     done
-    
+
     if [ ${#selected_indices[@]} -eq 0 ]; then
         print_error "Invalid selection"
         return 1
     fi
-    
-    # Show dry-run preview
+
     echo ""
     print_info "[DRY RUN] Preview of changes:"
     echo ""
-    
+
     for sel_idx in "${selected_indices[@]}"; do
-        local array_idx=$((sel_idx - 1))
+        local array_idx=$(( sel_idx - 1 ))
         local mount_name="${MOUNT_NAMES[$array_idx]}"
         local mount_point="${MOUNT_POINTS[$array_idx]}"
         local lxc_id="${MOUNT_LXC_IDS[$array_idx]}"
         local fstab_entry="${MOUNT_FSTAB_ENTRIES[$array_idx]}"
         local lxc_conf_entry="${MOUNT_LXC_CONF_ENTRIES[$array_idx]}"
-        
+
         echo "Mount: $mount_name"
         echo "  - Will remove from /etc/fstab:"
         echo "    $fstab_entry"
@@ -501,7 +490,7 @@ diff_rollback() {
         echo "  - Will update manifest"
         echo ""
     done
-    
+
     print_warn "No changes were made (dry run only)"
 }
 
@@ -543,8 +532,8 @@ Usage: $0 [MODE] [OPTIONS]
 
 Modes:
   --setup       Interactive setup of bind mounts (default)
-  --rollback    Remove previously created mounts
   --list        List all configured mounts
+  --rollback    Remove previously created mounts
   --diff        Preview rollback changes without applying
   --version     Show version
 
@@ -586,266 +575,13 @@ if [ "$SCRIPT_MODE" != "setup" ]; then
     exit 0
 fi
 
-# -------- SETUP MODE FLOW (below this line only runs for --setup) --------
+# -------- SETUP MODE FLOW --------
 
 print_header
 
-list_mounts() {
-    local manifest_file="/mnt/lxc_shares/.wizard-manifest.json"
-    
-    if [ ! -f "$manifest_file" ]; then
-        print_warn "No mount operations found"
-        return 0
-    fi
-    
-    local op_count=$(jq '.operations | length' "$manifest_file" 2>/dev/null || echo 0)
-    
-    if [ "$op_count" -eq 0 ]; then
-        print_info "No configured mounts"
-        return 0
-    fi
-    
-    print_info "Configured mounts:"
-    echo ""
-    echo "Index | LXC | Mount Name          | Share Path                    | Status"
-    echo "------|-----|---------------------|-----------| ---------"
-    
-    local i=1
-    jq -r '.operations[] | 
-        "\($ENV.i) | \(.lxc_id) | \(.mount_name) | \(.share_ip)/\(.share_path) | \(.status)"' \
-        --arg i "" "$manifest_file" 2>/dev/null | while read -r line; do
-        echo "[$i] $line"
-        ((i++))
-    done
-    
-    echo ""
-}
-
-rollback_mounts() {
-    local manifest_file="/mnt/lxc_shares/.wizard-manifest.json"
-    
-    if [ ! -f "$manifest_file" ]; then
-        print_error "No mount operations found to rollback"
-        return 1
-    fi
-    
-    local op_count=$(jq '.operations | length' "$manifest_file" 2>/dev/null || echo 0)
-    
-    if [ "$op_count" -eq 0 ]; then
-        print_warn "No configured mounts to rollback"
-        return 0
-    fi
-    
-    print_info "Available mounts for rollback:"
-    echo ""
-    
-    # Array to store mount info for selection
-    declare -a MOUNT_INDICES
-    declare -a MOUNT_NAMES
-    declare -a MOUNT_POINTS
-    declare -a MOUNT_LXC_IDS
-    declare -a MOUNT_FSTAB_ENTRIES
-    declare -a MOUNT_LXC_CONF_ENTRIES
-    
-    # Array to collect mount names for manifest cleanup
-    declare -a MOUNTS_TO_REMOVE=()
-    
-    local idx=1
-    while IFS= read -r mount_info; do
-        local mount_name=$(echo "$mount_info" | jq -r '.mount_name')
-        local lxc_id=$(echo "$mount_info" | jq -r '.lxc_id')
-        local mount_point=$(echo "$mount_info" | jq -r '.mount_point')
-        local fstab_entry=$(echo "$mount_info" | jq -r '.fstab_entry')
-        local lxc_conf_entry=$(echo "$mount_info" | jq -r '.lxc_conf_entry')
-        local status=$(echo "$mount_info" | jq -r '.status')
-        
-        MOUNT_INDICES+=("$idx")
-        MOUNT_NAMES+=("$mount_name")
-        MOUNT_POINTS+=("$mount_point")
-        MOUNT_LXC_IDS+=("$lxc_id")
-        MOUNT_FSTAB_ENTRIES+=("$fstab_entry")
-        MOUNT_LXC_CONF_ENTRIES+=("$lxc_conf_entry")
-        
-        echo "[$idx] $mount_name (LXC $lxc_id) - $mount_point [$status]"
-        ((idx++))
-    done < <(jq -c '.operations[]' "$manifest_file" 2>/dev/null)
-    
-    echo ""
-    read -rp "Select mount(s) to rollback (comma/space-separated, e.g. 1,3): " selection
-    
-    if [ -z "$selection" ]; then
-        print_warn "No selection made"
-        return 0
-    fi
-    
-    # Parse selection
-    local selected_indices=()
-    for sel in ${selection//,/ }; do
-        sel=${sel/ /}  # Remove whitespace
-        if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -lt "$idx" ]; then
-            selected_indices+=("$sel")
-        fi
-    done
-    
-    if [ ${#selected_indices[@]} -eq 0 ]; then
-        print_error "Invalid selection"
-        return 1
-    fi
-    
-    # Perform rollback for each selected mount
-    for sel_idx in "${selected_indices[@]}"; do
-        local array_idx=$((sel_idx - 1))
-        local mount_name="${MOUNT_NAMES[$array_idx]}"
-        local mount_point="${MOUNT_POINTS[$array_idx]}"
-        local lxc_id="${MOUNT_LXC_IDS[$array_idx]}"
-        local fstab_entry="${MOUNT_FSTAB_ENTRIES[$array_idx]}"
-        local lxc_conf_entry="${MOUNT_LXC_CONF_ENTRIES[$array_idx]}"
-        
-        print_info "Rolling back: $mount_name"
-        
-        # Remove from fstab (also removes comment line)
-        if grep -q "$mount_point" /etc/fstab 2>/dev/null; then
-            # Remove the mount point line and the preceding comment
-            sed -i "\|${fstab_entry}|d" /etc/fstab 2>/dev/null || true
-            sed -i "*${mount_point}*d" /etc/fstab 2>/dev/null || true
-            print_success "Removed from /etc/fstab"
-        fi
-        
-        # Remove from LXC config
-        local lxc_conf="/etc/pve/lxc/${lxc_id}.conf"
-        if [ -f "$lxc_conf" ] && grep -q "$mount_point" "$lxc_conf" 2>/dev/null; then
-            sed -i "\|${lxc_conf_entry}|d" "$lxc_conf" 2>/dev/null || true
-            # Also remove the preceding comment
-            sed -i "*${mount_point}*d" "$lxc_conf" 2>/dev/null || true
-            print_success "Removed from LXC config ($lxc_id.conf)"
-        fi
-        
-        # Unmount the share
-        if mountpoint -q "$mount_point" 2>/dev/null; then
-            umount "$mount_point" 2>/dev/null || true
-            print_success "Unmounted $mount_point"
-        fi
-        
-        # Optionally remove the mount point directory
-        if [ -d "$mount_point" ]; then
-            if confirm "Remove mount point directory ($mount_point)?"; then
-                rmdir "$mount_point" 2>/dev/null || print_warn "Could not remove directory (may contain files)"
-            fi
-        fi
-        
-        # Collect mount name for manifest removal
-        MOUNTS_TO_REMOVE+=("$mount_name")
-    done
-    
-    # Remove operations from manifest
-    if [ ${#MOUNTS_TO_REMOVE[@]} -gt 0 ]; then
-        print_info "Updating manifest..."
-        remove_operations_from_manifest "${MOUNTS_TO_REMOVE[@]}"
-        print_success "Removed entries from manifest"
-    fi
-    
-    echo ""
-    print_success "Rollback complete"
-}
-
-diff_rollback() {
-    local manifest_file="/mnt/lxc_shares/.wizard-manifest.json"
-    
-    if [ ! -f "$manifest_file" ]; then
-        print_error "No mount operations found"
-        return 1
-    fi
-    
-    local op_count=$(jq '.operations | length' "$manifest_file" 2>/dev/null || echo 0)
-    
-    if [ "$op_count" -eq 0 ]; then
-        print_warn "No configured mounts"
-        return 0
-    fi
-    
-    print_info "Available mounts for diff preview:"
-    echo ""
-    echo "Index | LXC | Mount Name          | Mount Point"
-    echo "------|-----|---------------------|-------------------"
-    
-    # Array to store mount info for selection
-    declare -a MOUNT_INDICES
-    declare -a MOUNT_NAMES
-    declare -a MOUNT_POINTS
-    declare -a MOUNT_LXC_IDS
-    declare -a MOUNT_FSTAB_ENTRIES
-    declare -a MOUNT_LXC_CONF_ENTRIES
-    
-    local idx=1
-    while IFS= read -r mount_info; do
-        local mount_name=$(echo "$mount_info" | jq -r '.mount_name')
-        local lxc_id=$(echo "$mount_info" | jq -r '.lxc_id')
-        local mount_point=$(echo "$mount_info" | jq -r '.mount_point')
-        local fstab_entry=$(echo "$mount_info" | jq -r '.fstab_entry')
-        local lxc_conf_entry=$(echo "$mount_info" | jq -r '.lxc_conf_entry')
-        
-        MOUNT_INDICES+=("$idx")
-        MOUNT_NAMES+=("$mount_name")
-        MOUNT_POINTS+=("$mount_point")
-        MOUNT_LXC_IDS+=("$lxc_id")
-        MOUNT_FSTAB_ENTRIES+=("$fstab_entry")
-        MOUNT_LXC_CONF_ENTRIES+=("$lxc_conf_entry")
-        
-        echo "[$idx] $lxc_id | $mount_name | $mount_point"
-        ((idx++))
-    done < <(jq -c '.operations[]' "$manifest_file" 2>/dev/null)
-    
-    echo ""
-    read -rp "Select mount(s) to preview (comma/space-separated): " selection
-    
-    if [ -z "$selection" ]; then
-        print_warn "No selection made"
-        return 0
-    fi
-    
-    # Parse selection
-    local selected_indices=()
-    for sel in ${selection//,/ }; do
-        sel=${sel/ /}  # Remove whitespace
-        if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -lt "$idx" ]; then
-            selected_indices+=("$sel")
-        fi
-    done
-    
-    if [ ${#selected_indices[@]} -eq 0 ]; then
-        print_error "Invalid selection"
-        return 1
-    fi
-    
-    # Show dry-run preview
-    echo ""
-    print_info "[DRY RUN] Preview of changes:"
-    echo ""
-    
-    for sel_idx in "${selected_indices[@]}"; do
-        local array_idx=$((sel_idx - 1))
-        local mount_name="${MOUNT_NAMES[$array_idx]}"
-        local mount_point="${MOUNT_POINTS[$array_idx]}"
-        local lxc_id="${MOUNT_LXC_IDS[$array_idx]}"
-        local fstab_entry="${MOUNT_FSTAB_ENTRIES[$array_idx]}"
-        local lxc_conf_entry="${MOUNT_LXC_CONF_ENTRIES[$array_idx]}"
-        
-        echo "Mount: $mount_name"
-        echo "  - Will remove from /etc/fstab:"
-        echo "    $fstab_entry"
-        echo "  - Will remove from /etc/pve/lxc/${lxc_id}.conf:"
-        echo "    $lxc_conf_entry"
-        echo "  - Will execute: umount $mount_point"
-        echo "  - Will update manifest"
-        echo ""
-    done
-    
-    print_warn "No changes were made (dry run only)"
-}
-
 # -------- INPUT --------
 
-LXC_ID=$(ask "Enter LXC ID")
+LXC_ID=$(ask "Enter LXC ID you want to mount the share into (e.g. 101)")
 
 LXC_CONF="/etc/pve/lxc/${LXC_ID}.conf"
 
@@ -855,8 +591,8 @@ if [ ! -f "$LXC_CONF" ]; then
 fi
 
 SHARE_IP=$(ask "Enter IP or hostname of your NAS or SMB Server (e.g. 192.168.1.100)")
-SHARE_PATH=$(ask "Enter share path (e.g. MYShare/Documents/Taxes)")
-MOUNT_NAME=$(ask "Enter local mount name (e.g. myshare_taxdocs)")
+SHARE_PATH=$(ask "Enter share path on the server (e.g. MYShare/Documents/Taxes)")
+MOUNT_NAME=$(ask "Enter name for local mount folder on the PVE host (e.g. myshare_taxdocs)")
 
 # -------- CREDENTIAL HANDLING --------
 
@@ -875,24 +611,24 @@ if [ ${#CREDS_ARRAY[@]} -gt 0 ]; then
     echo "Found existing credential files:"
     i=1
     for cred in "${CREDS_ARRAY[@]}"; do
-        basename=$(basename "$cred")
+        local_basename=$(basename "$cred")
         parsed=$(parse_credential_file "$cred")
         cred_user=$(echo "$parsed" | cut -d'|' -f1)
         cred_domain=$(echo "$parsed" | cut -d'|' -f2)
-        echo "[$i] $basename (user: $cred_user, domain: $cred_domain)"
-        ((i++))
+        echo "[$i] $local_basename (user: $cred_user, domain: $cred_domain)"
+        (( i++ )) || true
     done
     echo "[$i] Create new credentials"
     echo ""
     read -rp "Select option [1-$i]: " cred_choice
-    
-    if [ "$cred_choice" -ge 1 ] && [ "$cred_choice" -lt $i ]; then
+
+    if [ "$cred_choice" -ge 1 ] && [ "$cred_choice" -lt "$i" ]; then
         SELECTED_CRED="${CREDS_ARRAY[$((cred_choice - 1))]}"
         parsed=$(parse_credential_file "$SELECTED_CRED")
         cred_user=$(echo "$parsed" | cut -d'|' -f1)
         cred_domain=$(echo "$parsed" | cut -d'|' -f2)
-        
-        if confirm "Reuse credentials (user: $cred_user, domain: $cred_domain)?"; then
+
+        if confirm "Do you really want to reuse credentials (user: $cred_user, domain: $cred_domain)?"; then
             CREDS_FILE="$SELECTED_CRED"
             CREDENTIALS_PROVIDED=true
         else
@@ -915,7 +651,6 @@ if [ "$CREDENTIALS_PROVIDED" != true ]; then
     DOMAIN=$(ask "Enter domain (leave empty if not needed)")
     CREDS_FILE="/mnt/Creds/.creds-${MOUNT_NAME}"
 else
-    # Extract USERNAME and DOMAIN from the selected file for later use
     USERNAME=$(parse_credential_file "$CREDS_FILE" | cut -d'|' -f1)
     DOMAIN=$(parse_credential_file "$CREDS_FILE" | cut -d'|' -f2)
     [ "$DOMAIN" = "(none)" ] && DOMAIN=""
@@ -928,7 +663,6 @@ READ_ONLY=false
 if confirm "Mount as read-only?"; then
     READ_ONLY=true
 fi
-
 
 # -------- DETECT UID OFFSET --------
 
@@ -986,7 +720,7 @@ while IFS=: read -r username _ uid gid _ home shell; do
 
     echo "[$i] $username (UID=$uid GID=$gid)"
     USERS[$i]="$username:$uid:$gid"
-    ((i++))
+    (( i++ )) || true
 
 done <<< "$USER_LIST"
 
@@ -1035,8 +769,8 @@ fi
 
 # -------- UID MAPPING --------
 
-HOST_UID=$((CONTAINER_UID + OFFSET_UID))
-HOST_GID=$((CONTAINER_GID + OFFSET_GID))
+HOST_UID=$(( CONTAINER_UID + OFFSET_UID ))
+HOST_GID=$(( CONTAINER_GID + OFFSET_GID ))
 
 echo ""
 print_info "Selected user: $SELECTED_USER"
@@ -1071,12 +805,54 @@ fi
 
 # -------- EXECUTION --------
 
+# Track what we've changed so we can roll back on error
+FSTAB_WRITTEN=false
+LXC_CONF_WRITTEN=false
+CREDS_WRITTEN=false
+MOUNT_DIR_CREATED=false
+
+# Cleanup function: undo all partial changes and exit non-zero
+cleanup_on_error() {
+    print_error "An error occurred. Rolling back partial changes..."
+
+    if [ "$FSTAB_WRITTEN" = true ]; then
+        sed -i "\|${FSTAB_ENTRY}|d" /etc/fstab 2>/dev/null || true
+        sed -i "\|${FSTAB_COMMENT}|d" /etc/fstab 2>/dev/null || true
+        print_warn "Reverted /etc/fstab"
+    fi
+
+    if [ "$LXC_CONF_WRITTEN" = true ]; then
+        sed -i "\|${BIND_ENTRY}|d" "$LXC_CONF" 2>/dev/null || true
+        sed -i "\|${LXC_CONF_COMMENT}|d" "$LXC_CONF" 2>/dev/null || true
+        print_warn "Reverted $LXC_CONF"
+    fi
+
+    if [ "$CREDS_WRITTEN" = true ]; then
+        rm -f "$CREDS_FILE"
+        print_warn "Removed credentials file: $CREDS_FILE"
+    fi
+
+    if [ "$MOUNT_DIR_CREATED" = true ] && [ -d "$MOUNT_POINT" ]; then
+        rmdir "$MOUNT_POINT" 2>/dev/null || true
+        print_warn "Removed mount point directory: $MOUNT_POINT"
+    fi
+
+    # Manifest is never written on error — no manifest cleanup needed.
+    print_error "Rollback complete. No manifest entry was written."
+    exit 1
+}
+
+trap cleanup_on_error ERR
+
 echo ""
 print_info "Checking dependencies"
 check_cifs_utils
 
 print_info "Creating directories"
-mkdir -p "$MOUNT_POINT"
+if [ ! -d "$MOUNT_POINT" ]; then
+    mkdir -p "$MOUNT_POINT"
+    MOUNT_DIR_CREATED=true
+fi
 mkdir -p /mnt/Creds
 
 print_info "Writing credentials file"
@@ -1086,8 +862,8 @@ username=${USERNAME}
 password=${PASSWORD}
 domain=${DOMAIN}
 EOF
-
     chmod 600 "$CREDS_FILE"
+    CREDS_WRITTEN=true
     print_success "New credentials file created: $CREDS_FILE"
 else
     print_success "Using existing credentials file: $CREDS_FILE"
@@ -1095,20 +871,21 @@ fi
 
 print_info "Updating /etc/fstab"
 
-# Generate fstab entry with comment
 RO_MODE="rw"
 if [ "$READ_ONLY" = true ]; then
     RO_MODE="ro"
 fi
 
 FSTAB_COMMENT="# Added share using Proxmox Bind Mount Wizard: $(get_timestamp) | Share: //${SHARE_IP}/${SHARE_PATH} | User: ${DOMAIN}\\${USERNAME} | Mode: ${RO_MODE}"
-FSTAB_ENTRY="//${SHARE_IP}/${SHARE_PATH} ${MOUNT_POINT} cifs _netdev,x-systemd.automount,noatime,credentials=${CREDS_FILE},uid=${HOST_UID},gid=${HOST_GID},dir_mode=0770,file_mode=0770 0 0"
+FSTAB_ENTRY="//${SHARE_IP}/${SHARE_PATH} ${MOUNT_POINT} cifs _netdev,x-systemd.automount,noatime,credentials=${CREDS_FILE},uid=${HOST_UID},gid=${HOST_GID},dir_mode=0775,file_mode=0664 0 0"
 
 if grep -q "$MOUNT_POINT" /etc/fstab; then
-    print_warn "Entry already exists. Skipping"
+    print_warn "fstab entry already exists. Skipping"
 else
+    echo "" >> /etc/fstab
     echo "$FSTAB_COMMENT" >> /etc/fstab
     echo "$FSTAB_ENTRY" >> /etc/fstab
+    FSTAB_WRITTEN=true
 fi
 
 print_info "Mounting"
@@ -1117,13 +894,12 @@ mount "$MOUNT_POINT" || true
 
 print_info "Updating LXC config"
 
+# FIX: use || true so (( MP_INDEX++ )) when MP_INDEX=0 doesn't trigger set -e
 MP_INDEX=0
-# Only match lines that start with mpX: (not commented lines)
 while grep -q "^mp${MP_INDEX}:" "$LXC_CONF"; do
-    ((MP_INDEX++))
+    (( MP_INDEX++ )) || true
 done
 
-# Generate LXC config entry with comment
 LXC_CONF_COMMENT="# Added share using Proxmox Bind Mount Wizard: $(get_timestamp) | Share: //${SHARE_IP}/${SHARE_PATH} | User: ${DOMAIN}\\${USERNAME} | Mode: ${RO_MODE}"
 BIND_ENTRY="mp${MP_INDEX}: ${MOUNT_POINT},mp=${TARGET_PATH},shared=1"
 
@@ -1132,18 +908,21 @@ if $READ_ONLY; then
 fi
 
 if grep -q "$MOUNT_POINT" "$LXC_CONF"; then
-    print_warn "Bind mount already exists. Skipping"
+    print_warn "Bind mount already exists in LXC config. Skipping"
 else
     echo "$LXC_CONF_COMMENT" >> "$LXC_CONF"
     echo "$BIND_ENTRY" >> "$LXC_CONF"
+    LXC_CONF_WRITTEN=true
     print_success "Added as mp${MP_INDEX}"
 fi
 
-# -------- MANIFEST RECORDING --------
+# -------- MANIFEST RECORDING (only reached if all steps above succeeded) --------
+
+# Disarm the error trap before touching the manifest
+trap - ERR
 
 init_manifest
 
-# Create operation JSON object using jq (safely escapes all variables)
 OPERATION_JSON=$(build_operation_json \
     "$(get_timestamp)" \
     "$LXC_ID" \
@@ -1164,7 +943,6 @@ OPERATION_JSON=$(build_operation_json \
     "$FSTAB_ENTRY" \
     "$BIND_ENTRY")
 
-# Add operation to manifest
 add_operation "$OPERATION_JSON"
 print_success "Operation recorded in manifest"
 
@@ -1187,7 +965,7 @@ case "$completion_choice" in
         pct start "${LXC_ID}" || true
         sleep 3
         echo ""
-        print_info "Container restarted. To verify the mount, run:"
+        print_info "Container restarted. To verify the mount, run the following command:"
         echo "  pct exec ${LXC_ID} -- ls -lah ${TARGET_PATH}"
         echo ""
         ;;
@@ -1214,4 +992,3 @@ esac
 echo "======================================"
 print_success "All done"
 echo ""
-
