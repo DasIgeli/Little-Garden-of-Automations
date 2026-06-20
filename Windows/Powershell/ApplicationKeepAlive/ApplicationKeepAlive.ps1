@@ -25,7 +25,7 @@
     Optional. Full path to the log file. Defaults to C:\windows\temp\ApplicationKeepAlive.log.
 
 .EXAMPLE
-    .\Ensure-ProcessAndPowerState.ps1 -ProcessName "MyApp" -ProcessPath "C:\Program Files\MyApp"
+    .\ApplicationKeepAlive.ps1 -ProcessName "MyApp" -ProcessPath "C:\Program Files\MyApp"
 
 .NOTES
     Requires administrative privileges for the powercfg / network adapter changes.
@@ -45,7 +45,7 @@ param(
     [string]$LogFile = "C:\windows\temp\ApplicationKeepAlive.log"
 )
 
-# === 5. Logging function (kept as the one explicit function, everything else is inline) ===
+# === Logging function (kept as the one explicit function, everything else is inline) ===
 function Write-Log {
     param([string]$Message)
 
