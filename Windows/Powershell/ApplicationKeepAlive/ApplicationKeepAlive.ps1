@@ -123,20 +123,37 @@ else {
 # Setting GUID for "Sleep after" under the Sleep subgroup, locale-independent.
 $sleepSettingGuid = "29f6c1db-86da-48c5-9fdb-f2b67b0f90d5"
 
-$sleepQueryOutput = powercfg /query SCHEME_CURRENT SUB_SLEEP $sleepSettingGuid
-$sleepIndexes = [regex]::Matches($sleepQueryOutput, '0x[0-9A-Fa-f]+') | ForEach-Object { [Convert]::ToInt32($_.Value, 16) }
+$sleepQueryOutput = powercfg /query SCHEME_CURRENT SUB_SLEEP $sleepSettingGuid 2>$null
 
-$sleepAC = $sleepIndexes[0]
-$sleepDC = $sleepIndexes[1]
-
-if ($sleepAC -ne 0 -or $sleepDC -ne 0) {
-    Write-Log "Sleep timeout is NOT disabled (AC: $sleepAC sec, DC: $sleepDC sec). Setting both to 0 (Never)."
+if ($null -eq $sleepQueryOutput -or $sleepQueryOutput.Count -eq 0) {
+    Write-Log "Warning: Could not query sleep setting. Attempting to set sleep timeout directly."
     powercfg /change standby-timeout-ac 0
     powercfg /change standby-timeout-dc 0
-    Write-Log "Sleep timeout disabled for AC and DC."
+    Write-Log "Sleep timeout set to 0 (Never) for AC and DC."
 }
 else {
-    Write-Log "Sleep timeout already disabled (AC and DC both 0)."
+    $sleepIndexes = [regex]::Matches($sleepQueryOutput, '0x[0-9A-Fa-f]+') | ForEach-Object { [Convert]::ToInt32($_.Value, 16) }
+    
+    if ($sleepIndexes.Count -ge 2) {
+        $sleepAC = $sleepIndexes[0]
+        $sleepDC = $sleepIndexes[1]
+        
+        if ($sleepAC -ne 0 -or $sleepDC -ne 0) {
+            Write-Log "Sleep timeout is NOT disabled (AC: $sleepAC sec, DC: $sleepDC sec). Setting both to 0 (Never)."
+            powercfg /change standby-timeout-ac 0
+            powercfg /change standby-timeout-dc 0
+            Write-Log "Sleep timeout disabled for AC and DC."
+        }
+        else {
+            Write-Log "Sleep timeout already disabled (AC and DC both 0)."
+        }
+    }
+    else {
+        Write-Log "Warning: Could not parse sleep timeout values. Setting to 0 directly."
+        powercfg /change standby-timeout-ac 0
+        powercfg /change standby-timeout-dc 0
+        Write-Log "Sleep timeout set to 0 (Never) for AC and DC."
+    }
 }
 
 # === 4b. Optional: prevent network adapters from being powered off (addresses connectivity drops while locked) ===
